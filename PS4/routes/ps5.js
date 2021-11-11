@@ -4,6 +4,21 @@ const request = require('request');
 const {response} = require("express");
 const fetch = require('node-fetch');
 
+//for PS5
+//The POST ROUTE IS AT THE BOTTOM
+const db = require('../mongoCx');
+
+const redis = require('redis');
+const client = redis.createClient();
+
+//flush cache
+client.flushdb((err, success) => {
+    if (err) {
+        throw new Error(err)
+    }
+});
+
+
 import {getWeather} from "../config/const";
 
 /* PROBLEM B: WRAPPED IN A PROMISE */
@@ -54,12 +69,37 @@ router.get('/', function(req, res, next){
     res.render('Weatherform')
 });
 
+
+
+//PROBLEM SET 5
+
 router.post('/', async function(req,res,next){
     const city = req.body.city;
     console.log(req.body);
-    const request = await fetch(`https://api.weatherapi.com/v1/current.json?key=132e2f11ae4a441689512148212310&q=${city}&aqi=no`);
-    const data = await request.text();
-    res.render('index', {title: data})
+
+    //check if value is cached
+    client.exists(city, async (err, match) => {  //looks for key
+        if (err) {
+            throw new Error(err)
+        }
+        if (match) { //key exists, grab value
+            client.get(city, (err, response) => {
+                console.table(response);
+                res.send(JSON.stringify(response + ' cached '))
+            })
+            //if value is not cached, retrieve it from the API source
+        } else {
+            const request = await fetch(`https://api.weatherapi.com/v1/current.json?key=132e2f11ae4a441689512148212310&q=${city}&aqi=no`);
+            const data = await request.text();
+
+            client.set(city, data, 'EX', 15, (err, response) => { //city = key, reversedName = value, set expiration to 15 seconds
+                console.table(response);
+                res.send(JSON.stringify(data + ' not cached '))
+            }) //closure // Promises //async/await
+        }
+    })
+
+
 })
 
 module.exports = router;
